@@ -32,9 +32,8 @@ body {
 	width = context.canvas.width;
 	height = context.canvas.height;
 
-	resolution = 101;
+	resolution = 3;
 
-	planck = 0.1;
 	mass = 1;
 
 	function mod(a, b){
@@ -93,15 +92,6 @@ body {
 		}
 	}
 
-	state = [];
-
-	for(var i = 0; i < resolution; i++){
-		//state[i] = math.complex(math.cos(1*i*2*math.pi/resolution), math.sin(1*i*2*math.pi/resolution));
-		//state[i] = math.complex(Math.random(), Math.random());
-		state[i] = math.multiply(1/((math.abs(i - resolution/2) + 1)*(math.abs(i - resolution/2)+1)), math.exp(math.multiply(math.complex("i"), 20*2*math.pi*i/resolution)))
-	}
-	state = normalize(state);
-
 	function inverse_fourier(){
 		var output = Array(resolution);
 		for(var i = 0; i < resolution; i++){
@@ -118,7 +108,7 @@ body {
 		var diag = [];
 		for(var i = 0; i < resolution; i++){
 			var momentum = i - (resolution - 1)/2;
-			diag[i] = 2*math.pi*planck*momentum/resolution;
+			diag[i] = 2*math.pi*momentum/resolution;
 		}
 		return math.multiply(ift, math.diag(diag), ft);
 	}
@@ -134,26 +124,60 @@ body {
 	P = momentum_operator(ft, ift);
 	H = hamiltonian(P);
 
+	eigs = math.eigs(H);
+	
+	state = [];
+
+	for(var i = 0; i < resolution; i++){
+		//state[i] = math.complex(math.cos(1*i*2*math.pi/resolution), math.sin(1*i*2*math.pi/resolution));
+		//state[i] = math.complex(Math.random(), Math.random());
+		state[i] = math.multiply(1/((math.abs(i - resolution/3) + 1)*(math.abs(i - resolution/3) + 1)), math.exp(math.multiply(math.complex("i"), 2*2*math.pi*i/resolution)))
+	}
+	state = math.multiply(ft, state);
+	state = normalize(state);
+
+	state = eigs.vectors[0];
+
+	//Logging the inner products between eigenvectors and the state
+	//will allow us to correct the state later
+	inner_products = math.multiply(math.ctranspose(eigs.vectors), state);
+
+	function correct_state(state, inner_products, time){
+		var z;
+
+		for(i = 0; i < eigs.vectors.length; i++){
+			z = math.subtract(inner_products[i], math.multiply(math.exp(math.multiply(math.complex(0, 1), eigs.values[i], time)), math.dot(eigs.vectors[i], state)));
+			state = math.add(state, math.multiply(z, eigs.vectors[i]));
+		}
+		
+		return state;
+	}
+
 	function normalize(state){
 		return math.divide(state, math.sqrt(math.dot(state, state)));
 	}
 
-	function timestep(state, H, dt){
-		var change = math.multiply(math.complex("-i"), 1.0/planck, dt, math.multiply(H, state));
+	function timestep(state, H, dt, time){
+		var change = math.multiply(math.complex("-i"), dt, math.multiply(H, state));
 		state = math.add(state, change);
+		//state = correct_state(state, inner_products, time + dt);
+
 		return normalize(state);
 	}
 
-	//draw_graph(state);
-	//console.log(math.dot(state, state));
-	
+
+	time = 0;
+
 	function tick(){
-		state = timestep(state, H, 0.1);
+		for(i = 0; i < 10; i++){
+			state = timestep(state, H, 0.01, time);
+			time += 0.01;
+		}
 		draw_graph(state);
 		//draw_graph(math.multiply(ft, state));
 	}
 
-	setInterval(tick, 5);
+	setInterval(tick, 50);
 </script>
 </body>
 </html>
