@@ -32,9 +32,9 @@ body {
 	width = context.canvas.width;
 	height = context.canvas.height;
 
-	resolution = 15;
+	resolution = 101;
 
-	planck = 1;
+	planck = 0.1;
 	mass = 1;
 
 	function mod(a, b){
@@ -87,17 +87,20 @@ body {
 		for(var i = 0; i < resolution; i++){
 			var color = complex_to_color(vals[i]);
 			var len = math.abs(vals[i]);
-			context.fillStyle = "rgb("+255*color.red*len+","+255*color.green*len+","+255*color.blue*len+")";
+			len = len*len;
+			context.fillStyle = "rgb("+255*color.red+","+255*color.green+","+255*color.blue+")";
 			context.fillRect(width*i/resolution, height*(1 - len), width/resolution, height*len);
 		}
 	}
 
-	vals = [];
+	state = [];
 
 	for(var i = 0; i < resolution; i++){
-		vals[i] = math.complex(math.cos(1*i*2*math.pi/resolution), math.sin(1*i*2*math.pi/resolution));
+		//state[i] = math.complex(math.cos(1*i*2*math.pi/resolution), math.sin(1*i*2*math.pi/resolution));
+		//state[i] = math.complex(Math.random(), Math.random());
+		state[i] = math.multiply(1/((math.abs(i - resolution/2) + 1)*(math.abs(i - resolution/2)+1)), math.exp(math.multiply(math.complex("i"), 20*2*math.pi*i/resolution)))
 	}
-
+	state = normalize(state);
 
 	function inverse_fourier(){
 		var output = Array(resolution);
@@ -105,7 +108,7 @@ body {
 			output[i] = Array(resolution);
 			for(var j = 0; j < resolution; j++){
 				var momentum = j - (resolution - 1)/2;
-				output[i][j] = math.exp(math.multiply(2, math.pi, math.complex("i"), i, momentum, 1.0/resolution));
+				output[i][j] = math.multiply(1.0/math.sqrt(resolution), math.exp(math.multiply(2, math.pi, math.complex("i"), i, momentum, 1.0/resolution)));
 			}
 		}
 		return output;
@@ -131,8 +134,26 @@ body {
 	P = momentum_operator(ft, ift);
 	H = hamiltonian(P);
 
-	draw_graph(vals);
-	//draw_graph(math.multiply(ft, vals));
+	function normalize(state){
+		return math.divide(state, math.sqrt(math.dot(state, state)));
+	}
+
+	function timestep(state, H, dt){
+		var change = math.multiply(math.complex("-i"), 1.0/planck, dt, math.multiply(H, state));
+		state = math.add(state, change);
+		return normalize(state);
+	}
+
+	//draw_graph(state);
+	//console.log(math.dot(state, state));
+	
+	function tick(){
+		state = timestep(state, H, 0.1);
+		draw_graph(state);
+		//draw_graph(math.multiply(ft, state));
+	}
+
+	setInterval(tick, 5);
 </script>
 </body>
 </html>
