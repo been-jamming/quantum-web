@@ -32,7 +32,10 @@ body {
 	width = context.canvas.width;
 	height = context.canvas.height;
 
-	resolution = 200;
+	resolution = 15;
+
+	planck = 1;
+	mass = 1;
 
 	function mod(a, b){
 		return (a%b + b)%b;
@@ -44,7 +47,7 @@ body {
 		var blue;
 		var angle;
 
-		angle = mod(Math.atan2(val.imag, val.real), 2*Math.PI);
+		angle = mod(math.atan2(math.re(val), math.im(val)), 2*Math.PI);
 
 		if(angle <= Math.PI/3 || angle >= 5*Math.PI/3){
 			red = 1;
@@ -83,7 +86,7 @@ body {
 		context.fillRect(0, 0, width, height);
 		for(var i = 0; i < resolution; i++){
 			var color = complex_to_color(vals[i]);
-			var len = Math.sqrt(vals[i].real*vals[i].real + vals[i].imag*vals[i].imag);
+			var len = math.abs(vals[i]);
 			context.fillStyle = "rgb("+255*color.red*len+","+255*color.green*len+","+255*color.blue*len+")";
 			context.fillRect(width*i/resolution, height*(1 - len), width/resolution, height*len);
 		}
@@ -91,13 +94,45 @@ body {
 
 	vals = [];
 
-	for(i = 0; i < resolution; i++){
-		vals[i] = {real: Math.cos(i*2*Math.PI/resolution)*Math.abs(Math.sin(i*2*Math.PI/resolution + 2*Math.PI/3)), imag: Math.sin(i*2*Math.PI/resolution)*Math.abs(Math.sin(i*2*Math.PI/resolution + 2*Math.PI/3))};
+	for(var i = 0; i < resolution; i++){
+		vals[i] = math.complex(math.cos(1*i*2*math.pi/resolution), math.sin(1*i*2*math.pi/resolution));
 	}
 
-	draw_graph(vals);
 
-	console.log(math.sqrt(-4).toString());
+	function inverse_fourier(){
+		var output = Array(resolution);
+		for(var i = 0; i < resolution; i++){
+			output[i] = Array(resolution);
+			for(var j = 0; j < resolution; j++){
+				var momentum = j - (resolution - 1)/2;
+				output[i][j] = math.exp(math.multiply(2, math.pi, math.complex("i"), i, momentum, 1.0/resolution));
+			}
+		}
+		return output;
+	}
+
+	function momentum_operator(ft, ift){
+		var diag = [];
+		for(var i = 0; i < resolution; i++){
+			var momentum = i - (resolution - 1)/2;
+			diag[i] = 2*math.pi*planck*momentum/resolution;
+		}
+		return math.multiply(ift, math.diag(diag), ft);
+	}
+
+	function hamiltonian(P){
+		return math.multiply(P, P, 1.0/(2*mass));
+	}
+
+	ift = inverse_fourier();
+
+	ft = math.inv(ift);
+
+	P = momentum_operator(ft, ift);
+	H = hamiltonian(P);
+
+	draw_graph(vals);
+	//draw_graph(math.multiply(ft, vals));
 </script>
 </body>
 </html>
