@@ -12,6 +12,28 @@ canvas {
 	left: 0px;
 }
 
+div.ui_left {
+	width: 20%;
+	height: 100%;
+	padding: 0px;
+	position: absolute;
+	top: 0px;
+	right: 0px;
+}
+
+div.section_header {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	padding: 3%;
+}
+
+div.modes_buttons {
+	display: flex;
+	justify-content: space-between;
+	padding: 3%;
+}
+
 body {
 	margin: 0px;
 }
@@ -21,7 +43,14 @@ body {
 
 <body>
 <canvas class="wavefunction"></canvas>
-
+<div class="ui_left">
+	<div class="section_header">Set Mode</div>
+	<div class="modes_buttons">
+		<button onclick="mode = 'position';">Position</button>
+		<button onclick="mode = 'momentum';">Momentum</button>
+		<button>Potential</button>
+	</div>
+</div>
 <script>
 	context = document.getElementsByClassName("wavefunction")[0].getContext("2d");
 	context.canvas.width = window.innerWidth*0.8;
@@ -32,7 +61,7 @@ body {
 	width = context.canvas.width;
 	height = context.canvas.height;
 
-	resolution = 3;
+	resolution = 45;
 
 	mass = 1;
 
@@ -81,14 +110,29 @@ body {
 	}
 
 	function draw_graph(vals){
+		var largest_len = 0.0;
+
 		context.fillStyle = "black";
 		context.fillRect(0, 0, width, height);
+
 		for(var i = 0; i < resolution; i++){
-			var color = complex_to_color(vals[i]);
 			var len = math.abs(vals[i]);
 			len = len*len;
+			if(len > largest_len){
+				largest_len = len;
+			}
+		}
+
+		if(largest_len < 1.0/Math.sqrt(resolution)){
+			largest_len = 1.0/Math.sqrt(resolution);
+		}
+
+		for(i = 0; i < resolution; i++){
+			var color = complex_to_color(vals[i]);
+			len = math.abs(vals[i]);
+			len = len*len;
 			context.fillStyle = "rgb("+255*color.red+","+255*color.green+","+255*color.blue+")";
-			context.fillRect(width*i/resolution, height*(1 - len), width/resolution, height*len);
+			context.fillRect(width*i/resolution, height*(1 - len/largest_len), width/resolution, height*len/largest_len);
 		}
 	}
 
@@ -117,64 +161,48 @@ body {
 		return math.multiply(P, P, 1.0/(2*mass));
 	}
 
-	ift = inverse_fourier();
-
-	ft = math.inv(ift);
-
-	P = momentum_operator(ft, ift);
-	H = hamiltonian(P);
-
-	eigs = math.eigs(H);
-	
-	state = [];
-
-	for(var i = 0; i < resolution; i++){
-		//state[i] = math.complex(math.cos(1*i*2*math.pi/resolution), math.sin(1*i*2*math.pi/resolution));
-		//state[i] = math.complex(Math.random(), Math.random());
-		state[i] = math.multiply(1/((math.abs(i - resolution/3) + 1)*(math.abs(i - resolution/3) + 1)), math.exp(math.multiply(math.complex("i"), 2*2*math.pi*i/resolution)))
-	}
-	state = math.multiply(ft, state);
-	state = normalize(state);
-
-	state = eigs.vectors[0];
-
-	//Logging the inner products between eigenvectors and the state
-	//will allow us to correct the state later
-	inner_products = math.multiply(math.ctranspose(eigs.vectors), state);
-
-	function correct_state(state, inner_products, time){
-		var z;
-
-		for(i = 0; i < eigs.vectors.length; i++){
-			z = math.subtract(inner_products[i], math.multiply(math.exp(math.multiply(math.complex(0, 1), eigs.values[i], time)), math.dot(eigs.vectors[i], state)));
-			state = math.add(state, math.multiply(z, eigs.vectors[i]));
-		}
-		
-		return state;
-	}
-
 	function normalize(state){
 		return math.divide(state, math.sqrt(math.dot(state, state)));
 	}
 
-	function timestep(state, H, dt, time){
-		var change = math.multiply(math.complex("-i"), dt, math.multiply(H, state));
-		state = math.add(state, change);
-		//state = correct_state(state, inner_products, time + dt);
+	mode = "position";
 
-		return normalize(state);
+	ift = inverse_fourier();
+	ft = math.inv(ift);
+
+	P = momentum_operator(ft, ift);
+	H = hamiltonian(P);
+	eigs = math.eigs(H);
+	
+	initial_state = [];
+	for(var i = 0; i < resolution; i++){
+		initial_state[i] = math.multiply(1/((math.abs(i - resolution/3) + 1)*(math.abs(i - resolution/3) + 1)), math.exp(math.multiply(math.complex("i"), 2*2*math.pi*i/resolution)))
 	}
+	initial_state = math.multiply(ft, initial_state);
+	initial_state = normalize(initial_state);
+	initial_state = math.multiply(math.ctranspose(eigs.vectors), initial_state);
 
+	function get_state(initial_state, energies, eigenvectors, time){
+		var output = [];
+
+		for(var i = 0; i < resolution; i++){
+			var value = math.multiply(initial_state[i], math.exp(math.multiply(energies[i], time, math.complex("i"))));
+			output[i] = value;
+		}
+
+		return math.multiply(eigenvectors, output);
+	}
 
 	time = 0;
 
 	function tick(){
-		for(i = 0; i < 10; i++){
-			state = timestep(state, H, 0.01, time);
-			time += 0.01;
+		time += 0.1;
+		state = get_state(initial_state, eigs.values, eigs.vectors, time);
+		if(mode == "position"){
+			draw_graph(state);
+		} else if(mode == "momentum"){
+			draw_graph(math.multiply(ft, state));
 		}
-		draw_graph(state);
-		//draw_graph(math.multiply(ft, state));
 	}
 
 	setInterval(tick, 50);
