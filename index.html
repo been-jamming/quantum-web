@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Test</title>
+<title>Quantum Simulation</title>
 <style>
 canvas {
 	width: 80%;
@@ -19,6 +19,15 @@ div.ui_left {
 	position: absolute;
 	top: 0px;
 	right: 0px;
+}
+
+div.ui_bottom {
+	width: 80%;
+	height: 20%;
+	padding: 0px;
+	position: absolute;
+	bottom: 0px;
+	left: 0px;
 }
 
 div.section_header {
@@ -51,8 +60,16 @@ body {
 		<button>Potential</button>
 	</div>
 </div>
+
+<div class="ui_bottom">
+	<div class="playback_settings">
+		Speed: <input type="range" min="0" max="19" value="10" class="slider" id="speed" oninput="change_speed(this);"> <input style="width: 3em;" id="speed_display" onchange="speed = Number(this.value);"> Frame rate: <input value="144" style="width: 3em;" onchange="change_framerate(this);"> <br>
+
+	</div>
+</div>
 <script>
-	context = document.getElementsByClassName("wavefunction")[0].getContext("2d");
+	canvas = document.getElementsByClassName("wavefunction")[0];
+	context = canvas.getContext("2d");
 	context.canvas.width = window.innerWidth*0.8;
 	context.canvas.height = window.innerHeight*0.8;
 	context.fillStyle = "black";
@@ -61,9 +78,31 @@ body {
 	width = context.canvas.width;
 	height = context.canvas.height;
 
-	resolution = 45;
-
+	framerate = 144.0;
+	resolution = 100;
+	speed = 1.0;
 	mass = 1;
+	largest_len = 1.0;
+
+	mouse_x = 0;
+	mouse_y = 0;
+	mousedown = false;
+	mousemove = false;
+	mouseup = false;
+
+	function change_speed(element){
+		speed = Math.pow(2, element.value - 10);
+		document.getElementById("speed_display").value = speed;
+	}
+
+	function change_framerate(element){
+		framerate = Number(element.value);
+		if(isNaN(framerate)){
+			framerate = 144.0;
+		}
+		clearInterval(interval);
+		interval = setInterval(tick, 1000.0/framerate);
+	}
 
 	function mod(a, b){
 		return (a%b + b)%b;
@@ -109,22 +148,23 @@ body {
 		return {red: red, green: green, blue: blue};
 	}
 
-	function draw_graph(vals){
-		var largest_len = 0.0;
-
+	function draw_graph(vals, largest_len){
 		context.fillStyle = "black";
 		context.fillRect(0, 0, width, height);
 
-		for(var i = 0; i < resolution; i++){
-			var len = math.abs(vals[i]);
-			len = len*len;
-			if(len > largest_len){
-				largest_len = len;
+		if(!mousedown){
+			largest_len = 0.0;
+			for(var i = 0; i < resolution; i++){
+				var len = math.abs(vals[i]);
+				len = len*len;
+				if(len > largest_len){
+					largest_len = len;
+				}
 			}
-		}
 
-		if(largest_len < 1.0/Math.sqrt(resolution)){
-			largest_len = 1.0/Math.sqrt(resolution);
+			if(largest_len < 1.0/Math.sqrt(resolution)){
+				largest_len = 1.0/Math.sqrt(resolution);
+			}
 		}
 
 		for(i = 0; i < resolution; i++){
@@ -134,6 +174,8 @@ body {
 			context.fillStyle = "rgb("+255*color.red+","+255*color.green+","+255*color.blue+")";
 			context.fillRect(width*i/resolution, height*(1 - len/largest_len), width/resolution, height*len/largest_len);
 		}
+
+		return largest_len;
 	}
 
 	function inverse_fourier(){
@@ -165,6 +207,25 @@ body {
 		return math.divide(state, math.sqrt(math.dot(state, state)));
 	}
 
+	function normalize_eigenvectors(vectors){
+		for(var i = 0; i < resolution; i++){
+			var total = 0.0;
+
+			for(var j = 0; j < resolution; j++){
+				var entry = math.abs(vectors[j][i]);
+				total += entry*entry;
+			}
+
+			var length = Math.sqrt(total);
+
+			for(j = 0; j < resolution; j++){
+				vectors[j][i] = math.divide(vectors[j][i], length);
+			}
+		}
+
+		return vectors;
+	}
+
 	mode = "position";
 
 	ift = inverse_fourier();
@@ -173,6 +234,8 @@ body {
 	P = momentum_operator(ft, ift);
 	H = hamiltonian(P);
 	eigs = math.eigs(H);
+	eigenvectors = normalize_eigenvectors(eigs.vectors);
+	eigenvalues = eigs.values;
 	
 	initial_state = [];
 	for(var i = 0; i < resolution; i++){
@@ -180,7 +243,7 @@ body {
 	}
 	initial_state = math.multiply(ft, initial_state);
 	initial_state = normalize(initial_state);
-	initial_state = math.multiply(math.ctranspose(eigs.vectors), initial_state);
+	initial_state = math.multiply(math.ctranspose(eigenvectors), initial_state);
 
 	function get_state(initial_state, energies, eigenvectors, time){
 		var output = [];
@@ -195,17 +258,75 @@ body {
 
 	time = 0;
 
-	function tick(){
-		time += 0.1;
-		state = get_state(initial_state, eigs.values, eigs.vectors, time);
-		if(mode == "position"){
-			draw_graph(state);
-		} else if(mode == "momentum"){
-			draw_graph(math.multiply(ft, state));
+	function edit_state(state, largest_len){
+		var column = Math.floor(resolution*mouse_x/width);
+
+		if(mode == "momentum"){
+			var state_display = math.multiply(ft, state);
+		} else {
+			var state_display = state;
 		}
+
+		state_display[column] = math.multiply(state_display[column], Math.sqrt((height + 1 - mouse_y)/height*largest_len)/math.abs(state_display[column]));
+
+		if(mode == "momentum"){
+			state_display = math.multiply(ift, state_display);
+		}
+
+		return state_display;
 	}
 
-	setInterval(tick, 50);
+	function tick(){
+		var len;
+		if(mouseup){
+			initial_state = normalize(state);
+			initial_state = math.multiply(math.ctranspose(eigenvectors), initial_state);
+			time = 0.0;
+		}
+		if(!mousedown){
+			if(isNaN(speed)){
+				speed = 0.0;
+			}
+			time += speed/framerate;
+			state = get_state(initial_state, eigenvalues, eigenvectors, time);
+			state = normalize(state);
+		} else if(mousemove){
+			state = edit_state(state, largest_len);
+		}
+		if(mode == "position"){
+			len = draw_graph(state, largest_len);
+			if(!mousedown){
+				largest_len = len;
+			}
+		} else if(mode == "momentum"){
+			len = draw_graph(math.multiply(ft, state), largest_len);
+			if(!mousedown){
+				largest_len = len;
+			}
+		}
+		mousemove = false;
+		mouseup = false;
+	}
+
+	function handle_mousedown(event){
+		mousedown = true;
+	}
+
+	function handle_mouseup(event){
+		mousedown = false;
+		mouseup = true;
+	}
+
+	function handle_mousemove(event){
+		mouse_x = event.x;
+		mouse_y = event.y;
+		mousemove = true;
+	}
+
+	interval = setInterval(tick, 1000/framerate);
+	canvas.addEventListener("mousedown", handle_mousedown);
+	canvas.addEventListener("mouseup", handle_mouseup);
+	canvas.addEventListener("mousemove", handle_mousemove);
 </script>
 </body>
 </html>
