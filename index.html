@@ -55,15 +55,26 @@ body {
 <div class="ui_left">
 	<div class="section_header">Set Mode</div>
 	<div class="modes_buttons">
-		<button onclick="mode = 'position';">Position</button>
-		<button onclick="mode = 'momentum';">Momentum</button>
-		<button>Potential</button>
+		<button onclick="switch_mode('position');">Position</button>
+		<button onclick="switch_mode('momentum');">Momentum</button>
+		<button onclick="switch_mode('potential');">Potential</button>
+	</div>
+	<div id="position_settings" class = "settings">
+		<button onclick="clear_position();">Clear Position</button>
+	</div>
+	<div id="momentum_settings" class = "settings" style="display: none;">
+		<button onclick="clear_momentum();">Clear Momentum</button>
+	</div>
+	<div id="potential_settings" class = "settings" style="display: none;">
+		<button onclick="clear_potential();">Clear Potential</button><br>
+		Max potential: <input style="width: 3em;" id="max_potential" onchange="change_max_potential(this)";">
 	</div>
 </div>
 
 <div class="ui_bottom">
 	<div class="playback_settings">
-		Speed: <input type="range" min="0" max="19" value="10" class="slider" id="speed" oninput="change_speed(this);"> <input style="width: 3em;" id="speed_display" onchange="speed = Number(this.value);"> Frame rate: <input value="144" style="width: 3em;" onchange="change_framerate(this);"> <br>
+		Speed: <input type="range" min="0" max="19" value="10" class="slider" id="speed" oninput="change_speed(this);"> <input style="width: 3em;" id="speed_display" onchange="speed = Number(this.value);"> Frame rate: <input value="60" style="width: 3em;" onchange="change_framerate(this);"> Resolution: <input value="49" style="width: 3em;" onchange="change_resolution(this);"> <br>
+		<button id="pause_button" onclick="pause_toggle();">Pause</button>
 
 	</div>
 </div>
@@ -78,8 +89,8 @@ body {
 	width = context.canvas.width;
 	height = context.canvas.height;
 
-	framerate = 144.0;
-	resolution = 100;
+	framerate = 60.0;
+	resolution = 49;
 	speed = 1.0;
 	mass = 1;
 	largest_len = 1.0;
@@ -89,6 +100,71 @@ body {
 	mousedown = false;
 	mousemove = false;
 	mouseup = false;
+	paused = false;
+
+	function clear_position(){
+		var i;
+
+		for(i = 0; i < resolution; i++){
+			state[i] = math.multiply(0.001, math.divide(state[i], math.abs(state[i])));
+		}
+
+		mouseup = true;
+	}
+
+	function clear_momentum(){
+		var i;
+
+		var momentum_state = math.multiply(ft, state);
+
+		for(i = 0; i < resolution; i++){
+			momentum_state[i] = math.multiply(0.001, math.divide(momentum_state[i], math.abs(momentum_state[i])));
+		}
+
+		state = math.multiply(ift, momentum_state);
+
+		mouseup = true;
+	}
+
+	function clear_potential(){
+		var i;
+
+		for(i = 0; i < resolution; i++){
+			potential[i] = 0.0;
+		}
+
+		V = math.diag(potential);
+		H = hamiltonian(P, V);
+		eigs = math.eigs(H);
+		eigenvectors = normalize_eigenvectors(eigs.vectors);
+		eigenvalues = eigs.values;
+	}
+
+	function change_max_potential(element){
+		largest_potential = element.value;
+	}
+
+	function switch_mode(new_mode){
+		var i;
+		elements = document.getElementsByClassName("settings");
+
+		for(i = 0; i < elements.length; i++){
+			elements[i].style = "display: none;";
+		}
+
+		document.getElementById(new_mode + "_settings").style = "display: block;";
+
+		mode = new_mode;
+	}
+
+	function pause_toggle(){
+		paused = !paused;
+		if(paused){
+			document.getElementById("pause_button").innerHTML = "Play";
+		} else {
+			document.getElementById("pause_button").innerHTML = "Pause";
+		}
+	}
 
 	function change_speed(element){
 		speed = Math.pow(2, element.value - 10);
@@ -98,10 +174,16 @@ body {
 	function change_framerate(element){
 		framerate = Number(element.value);
 		if(isNaN(framerate)){
-			framerate = 144.0;
+			framerate = 60;
 		}
 		clearInterval(interval);
 		interval = setInterval(tick, 1000.0/framerate);
+	}
+
+	function change_resolution(element){
+		resolution = Number(element.value);
+		resolution -= (resolution - 1)%2;
+		prepare();
 	}
 
 	function mod(a, b){
@@ -148,13 +230,15 @@ body {
 		return {red: red, green: green, blue: blue};
 	}
 
-	function draw_graph(vals, largest_len){
+	function draw_graph(vals, potential, largest_len, largest_potential){
+		var i;
+
 		context.fillStyle = "black";
 		context.fillRect(0, 0, width, height);
 
 		if(!mousedown){
 			largest_len = 0.0;
-			for(var i = 0; i < resolution; i++){
+			for(i = 0; i < resolution; i++){
 				var len = math.abs(vals[i]);
 				len = len*len;
 				if(len > largest_len){
@@ -167,12 +251,28 @@ body {
 			}
 		}
 
+		if(mode == "position"){
+			for(i = 0; i < resolution; i++){
+				len = potential[i];
+				context.fillStyle = "rgb(128, 128, 128)";
+				context.fillRect(width*i/resolution, height*(1 - len/largest_potential), width/resolution, height*len/largest_potential);
+			}
+		}
+
 		for(i = 0; i < resolution; i++){
 			var color = complex_to_color(vals[i]);
 			len = math.abs(vals[i]);
 			len = len*len;
 			context.fillStyle = "rgb("+255*color.red+","+255*color.green+","+255*color.blue+")";
 			context.fillRect(width*i/resolution, height*(1 - len/largest_len), width/resolution, height*len/largest_len);
+		}
+
+		if(mode == "potential"){
+			for(i = 0; i < resolution; i++){
+				len = potential[i];
+				context.fillStyle = "rgb(128, 128, 128)";
+				context.fillRect(width*i/resolution, height*(1 - len/largest_potential), width/resolution, height*len/largest_potential);
+			}
 		}
 
 		return largest_len;
@@ -199,8 +299,8 @@ body {
 		return math.multiply(ift, math.diag(diag), ft);
 	}
 
-	function hamiltonian(P){
-		return math.multiply(P, P, 1.0/(2*mass));
+	function hamiltonian(P, V){
+		return math.add(math.multiply(P, P, 1.0/(2*mass)), V);
 	}
 
 	function normalize(state){
@@ -228,22 +328,31 @@ body {
 
 	mode = "position";
 
-	ift = inverse_fourier();
-	ft = math.inv(ift);
+	function prepare(){
+		potential = Array(resolution);
+		for(i = 0; i < resolution; i++){
+			potential[i] = 0.0;
+		}
+		ift = inverse_fourier();
+		ft = math.inv(ift);
 
-	P = momentum_operator(ft, ift);
-	H = hamiltonian(P);
-	eigs = math.eigs(H);
-	eigenvectors = normalize_eigenvectors(eigs.vectors);
-	eigenvalues = eigs.values;
-	
-	initial_state = [];
-	for(var i = 0; i < resolution; i++){
-		initial_state[i] = math.multiply(1/((math.abs(i - resolution/3) + 1)*(math.abs(i - resolution/3) + 1)), math.exp(math.multiply(math.complex("i"), 2*2*math.pi*i/resolution)))
+		P = momentum_operator(ft, ift);
+		V = math.diag(potential);
+		H = hamiltonian(P, V);
+		eigs = math.eigs(H);
+		eigenvectors = normalize_eigenvectors(eigs.vectors);
+		eigenvalues = eigs.values;
+		
+		initial_state = [];
+		for(var i = 0; i < resolution; i++){
+			initial_state[i] = math.multiply(1/((math.abs(i - resolution/3) + 1)*(math.abs(i - resolution/3) + 1)), math.exp(math.multiply(math.complex("i"), 2*2*math.pi*i/resolution)))
+		}
+		initial_state = math.multiply(ft, initial_state);
+		initial_state = normalize(initial_state);
+		initial_state = math.multiply(math.ctranspose(eigenvectors), initial_state);
+		time = 0;
+		largest_potential = 1.0;
 	}
-	initial_state = math.multiply(ft, initial_state);
-	initial_state = normalize(initial_state);
-	initial_state = math.multiply(math.ctranspose(eigenvectors), initial_state);
 
 	function get_state(initial_state, energies, eigenvectors, time){
 		var output = [];
@@ -256,9 +365,7 @@ body {
 		return math.multiply(eigenvectors, output);
 	}
 
-	time = 0;
-
-	function edit_state(state, largest_len){
+	function edit_state(state, largest_len, largest_potential){
 		var column = Math.floor(resolution*mouse_x/width);
 
 		if(mode == "momentum"){
@@ -267,7 +374,11 @@ body {
 			var state_display = state;
 		}
 
-		state_display[column] = math.multiply(state_display[column], Math.sqrt((height + 1 - mouse_y)/height*largest_len)/math.abs(state_display[column]));
+		if(mode == "potential"){
+			potential[column] = (1.0 - mouse_y/height)*largest_potential;
+		} else {
+			state_display[column] = math.multiply(state_display[column], Math.sqrt((height + 1 - mouse_y)/height*largest_len)/math.abs(state_display[column]));
+		}
 
 		if(mode == "momentum"){
 			state_display = math.multiply(ift, state_display);
@@ -279,6 +390,13 @@ body {
 	function tick(){
 		var len;
 		if(mouseup){
+			if(mode == "potential"){
+				V = math.diag(potential);
+				H = hamiltonian(P, V);
+				eigs = math.eigs(H);
+				eigenvectors = normalize_eigenvectors(eigs.vectors);
+				eigenvalues = eigs.values;
+			}
 			initial_state = normalize(state);
 			initial_state = math.multiply(math.ctranspose(eigenvectors), initial_state);
 			time = 0.0;
@@ -287,19 +405,21 @@ body {
 			if(isNaN(speed)){
 				speed = 0.0;
 			}
-			time += speed/framerate;
+			if(!paused){
+				time += speed/framerate;
+			}
 			state = get_state(initial_state, eigenvalues, eigenvectors, time);
 			state = normalize(state);
 		} else if(mousemove){
-			state = edit_state(state, largest_len);
+			state = edit_state(state, largest_len, largest_potential);
 		}
-		if(mode == "position"){
-			len = draw_graph(state, largest_len);
+		if(mode == "position" || mode == "potential"){
+			len = draw_graph(state, potential, largest_len, largest_potential);
 			if(!mousedown){
 				largest_len = len;
 			}
 		} else if(mode == "momentum"){
-			len = draw_graph(math.multiply(ft, state), largest_len);
+			len = draw_graph(math.multiply(ft, state), potential, largest_len, largest_potential);
 			if(!mousedown){
 				largest_len = len;
 			}
@@ -323,6 +443,7 @@ body {
 		mousemove = true;
 	}
 
+	prepare();
 	interval = setInterval(tick, 1000/framerate);
 	canvas.addEventListener("mousedown", handle_mousedown);
 	canvas.addEventListener("mouseup", handle_mouseup);
