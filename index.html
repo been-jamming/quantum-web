@@ -339,12 +339,22 @@ body {
 		P = momentum_operator(ft, ift);
 		V = math.diag(potential);
 		H = hamiltonian(P, V);
+
+		//The position operator
+		X_diag = [];
+		for(var i = 0; i < resolution; i++){
+			X_diag[i] = math.exp(math.multiply(2, math.pi, math.complex("i"), i/resolution));
+		}
+		X = math.diag(X_diag);
+
+		math_scope = {"X": X, "P": P, "V": V, "H": H};
+
 		eigs = math.eigs(H);
 		eigenvectors = normalize_eigenvectors(eigs.vectors);
 		eigenvalues = eigs.values;
 		
 		initial_state = [];
-		for(var i = 0; i < resolution; i++){
+		for(i = 0; i < resolution; i++){
 			initial_state[i] = math.multiply(1/((math.abs(i - resolution/3) + 1)*(math.abs(i - resolution/3) + 1)), math.exp(math.multiply(math.complex("i"), 2*2*math.pi*i/resolution)))
 		}
 		initial_state = math.multiply(ft, initial_state);
@@ -385,6 +395,44 @@ body {
 		}
 
 		return state_display;
+	}
+
+	function measure(observable){
+		var obs_eigs;
+		var obs_vectors;
+		var obs_values;
+		var inner_product;
+		var probabilities = [];
+		var r;
+
+		obs_eigs = math.eigs(observable);
+		obs_vectors = normalize_eigenvectors(obs_eigs.vectors);
+		obs_values = obs_eigs.values;
+
+		for(var i = 0; i < resolution; i++){
+			inner_product = math.multiply(math.ctranspose(math.column(obs_vectors, i)), state);
+			if(Array.isArray(inner_product)){
+				inner_product = inner_product[0];
+			}
+			probabilities[i] = Number(math.multiply(inner_product, math.conj(inner_product)));
+		}
+
+		r = Math.random();
+
+		for(i = 0; i < resolution; i++){
+			console.log(r);
+			r -= probabilities[i];
+			if(r < 0){
+				break;
+			}
+		}
+
+		console.log(obs_values);
+		alert("Observed value: " + obs_values[i]);
+
+		initial_state = normalize(math.column(obs_vectors, i));
+		initial_state = math.multiply(math.ctranspose(eigenvectors), initial_state);
+		time = 0.0;
 	}
 
 	function tick(){
