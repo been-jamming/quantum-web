@@ -74,8 +74,8 @@ body {
 <div class="ui_bottom">
 	<div class="playback_settings">
 		Speed: <input type="range" min="0" max="19" value="10" class="slider" id="speed" oninput="change_speed(this);"> <input style="width: 3em;" id="speed_display" onchange="speed = Number(this.value);"> Frame rate: <input value="60" style="width: 3em;" onchange="change_framerate(this);"> Resolution: <input value="49" style="width: 3em;" onchange="change_resolution(this);"> <br>
-		<button id="pause_button" onclick="pause_toggle();">Pause</button>
-
+		<button id="pause_button" onclick="pause_toggle();">Pause</button><br>
+		<input id="observable"><button onclick="make_measurement();">Measure!</button>
 	</div>
 </div>
 <script>
@@ -101,6 +101,11 @@ body {
 	mousemove = false;
 	mouseup = false;
 	paused = false;
+
+	function make_measurement(){
+		observable = math.evaluate(document.getElementById("observable").value, math_scope);
+		measure(observable);
+	}
 
 	function clear_position(){
 		var i;
@@ -136,7 +141,7 @@ body {
 		V = math.diag(potential);
 		H = hamiltonian(P, V);
 		eigs = math.eigs(H);
-		eigenvectors = normalize_eigenvectors(eigs.vectors);
+		eigenvectors = normalize_eigenvectors(math.matrixFromColumns(...eigs.eigenvectors.map(obj => obj.vector)));
 		eigenvalues = eigs.values;
 	}
 
@@ -337,20 +342,27 @@ body {
 		ft = math.inv(ift);
 
 		P = momentum_operator(ft, ift);
+		//Remove the real part of the momentum cause it should be 0
+		//Multiplying P by -i doesn't change the simulation since P^2 is all that's used in the hamiltonian
+		//However, P should be real valued anyways
+		P = math.im(P);
 		V = math.diag(potential);
 		H = hamiltonian(P, V);
 
-		//The position operator
-		X_diag = [];
+		//The position operators
+		X0_diag = [];
+		X1_diag = [];
 		for(var i = 0; i < resolution; i++){
-			X_diag[i] = math.exp(math.multiply(2, math.pi, math.complex("i"), i/resolution));
+			X0_diag[i] = math.cos(math.multiply(2, math.pi, i/resolution));
+			X1_diag[i] = math.sin(math.multiply(2, math.pi, i/resolution));
 		}
-		X = math.diag(X_diag);
+		X0 = math.diag(X0_diag);
+		X1 = math.diag(X1_diag);
 
-		math_scope = {"X": X, "P": P, "V": V, "H": H};
+		math_scope = {"X0": X0, "X1": X1, "P": P, "V": V, "H": H};
 
 		eigs = math.eigs(H);
-		eigenvectors = normalize_eigenvectors(eigs.vectors);
+		eigenvectors = normalize_eigenvectors(math.matrixFromColumns(...eigs.eigenvectors.map(obj => obj.vector)));
 		eigenvalues = eigs.values;
 		
 		initial_state = [];
@@ -404,33 +416,50 @@ body {
 		var inner_product;
 		var probabilities = [];
 		var r;
+		var real_part;
+		var imag_part;
+		var real_values;
+		var imag_values;
 
-		obs_eigs = math.eigs(observable);
-		obs_vectors = normalize_eigenvectors(obs_eigs.vectors);
+		obs_eigs = math.eigs(observable, 1e-3);
+		obs_vectors = normalize_eigenvectors(math.matrixFromColumns(...obs_eigs.eigenvectors.map(obj => obj.vector)));
 		obs_values = obs_eigs.values;
 
+		//TODO
+		//Inner products don't compute the probabilities correctly for the degenerate case if the eigenvectors aren't orthogonal.
 		for(var i = 0; i < resolution; i++){
 			inner_product = math.multiply(math.ctranspose(math.column(obs_vectors, i)), state);
+			//Why the fuck is this so inconsistent?
 			if(Array.isArray(inner_product)){
 				inner_product = inner_product[0];
 			}
-			probabilities[i] = Number(math.multiply(inner_product, math.conj(inner_product)));
+			if(Array.isArray(inner_product)){
+				inner_product = inner_product[0];
+			}
+			probabilities[i] = math.re(math.multiply(inner_product, math.conj(inner_product)));
 		}
 
 		r = Math.random();
 
 		for(i = 0; i < resolution; i++){
-			console.log(r);
 			r -= probabilities[i];
 			if(r < 0){
 				break;
 			}
 		}
 
-		console.log(obs_values);
-		alert("Observed value: " + obs_values[i]);
+		var matching_eigenvectors = [];
+		for(var j = 0; j < resolution; j++){
+			if(math.abs(math.subtract(obs_values[i], obs_values[j])) < math.config.epsilon){
+				matching_eigenvectors.push(math.ctranspose(math.column(obs_vectors, j))[0]);
+			}
+		}
+		//Fancy trick to calculate the projection onto the range of a matrix
+		//In this case, the projection onto the eigenspace
+		//I have to do this because the computed eigenvectors may not be orthogonal
+		var projection = math.multiply(math.ctranspose(matching_eigenvectors), math.inv(math.multiply(matching_eigenvectors, math.ctranspose(matching_eigenvectors))), matching_eigenvectors);
 
-		initial_state = normalize(math.column(obs_vectors, i));
+		initial_state = normalize(math.multiply(projection, state));
 		initial_state = math.multiply(math.ctranspose(eigenvectors), initial_state);
 		time = 0.0;
 	}
@@ -442,7 +471,7 @@ body {
 				V = math.diag(potential);
 				H = hamiltonian(P, V);
 				eigs = math.eigs(H);
-				eigenvectors = normalize_eigenvectors(eigs.vectors);
+				eigenvectors = normalize_eigenvectors(math.matrixFromColumns(...eigs.eigenvectors.map(obj => obj.vector)));
 				eigenvalues = eigs.values;
 			}
 			initial_state = normalize(state);
